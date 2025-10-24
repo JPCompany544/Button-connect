@@ -23,6 +23,8 @@ function App() {
         const tw = eth.providers.find(isTrust);
         if (tw) return tw;
       }
+      // In mobile in-app browser, provider may not flag isTrust — accept ethereum directly
+      if (isMobile()) return eth;
     }
     if (win?.trustwallet) return win.trustwallet;
     return null;
@@ -67,15 +69,15 @@ function App() {
     const accounts = await tw.request({ method: "eth_requestAccounts" });
     return accounts as string[];
   };
+  
+  const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T> => {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timeout")), ms);
+      p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+    });
+  };
 
   useEffect(() => {
-    const handler = () => {
-      
-    };
-    window.addEventListener("trustwallet#initialize" as any, handler as any, { once: true } as any);
-    const tw = getTrustWalletProvider();
-    const on = (tw as any)?.on ?? (tw as any)?.addListener;
-    const off = (tw as any)?.removeListener ?? (tw as any)?.off;
     const onAccountsChanged = (accounts: string[]) => {
       if (!accounts || accounts.length === 0) {
         setWalletAddress(null);
@@ -83,10 +85,20 @@ function App() {
         try { setWalletAddress(ethers.getAddress(accounts[0])); } catch { setWalletAddress(accounts[0]); }
       }
     };
-    on?.("accountsChanged", onAccountsChanged);
+    const attach = () => {
+      const tw = getTrustWalletProvider();
+      const on = (tw as any)?.on ?? (tw as any)?.addListener;
+      on?.("accountsChanged", onAccountsChanged);
+    };
+    attach();
+    window.addEventListener("trustwallet#initialize" as any, attach as any, { once: true } as any);
     return () => {
-      window.removeEventListener("trustwallet#initialize" as any, handler as any);
-      off?.("accountsChanged", onAccountsChanged);
+      try {
+        const tw = getTrustWalletProvider();
+        const off = (tw as any)?.removeListener ?? (tw as any)?.off;
+        off?.("accountsChanged", onAccountsChanged);
+      } catch {}
+      window.removeEventListener("trustwallet#initialize" as any, attach as any);
     };
   }, []);
 
@@ -95,7 +107,7 @@ function App() {
       setConnecting(true);
       let twProvider = getTrustWalletProvider();
       if (isMobile() && !twProvider) {
-        twProvider = await waitForTrustWalletProvider(1500);
+        twProvider = await waitForTrustWalletProvider();
       }
       if (isMobile() && !twProvider) {
         const projectId = (import.meta as any)?.env?.VITE_WC_PROJECT_ID as string | undefined;
@@ -144,11 +156,31 @@ function App() {
         return;
       }
       
-      const accounts = await requestFreshAccountsPermission(twProvider);
+      let addr: string | undefined;
+      if (isMobile()) {
+        let accounts: string[] = [];
+        try { await withTimeout(twProvider.request({ method: "eth_chainId" }), 3000); } catch {}
+        try {
+          const existing = await withTimeout(twProvider.request({ method: "eth_accounts" }), 2000);
+          if (Array.isArray(existing)) accounts = existing;
+        } catch {}
+        if (!accounts.length) {
+          try { accounts = await withTimeout(twProvider.request({ method: "eth_requestAccounts" }), 15000) as string[]; } catch {}
+        }
+        if (!accounts.length && typeof twProvider.enable === "function") {
+          try { const en = await withTimeout(twProvider.enable(), 15000) as string[]; if (Array.isArray(en)) accounts = en; } catch {}
+        }
+        if (!accounts.length) throw new Error("No accounts");
+        addr = accounts[0];
+      } else {
+        // Desktop extension: keep best-effort re-prompt behavior
+        const accounts = await requestFreshAccountsPermission(twProvider);
+        addr = accounts?.[0];
+      }
       const provider = new ethers.BrowserProvider(twProvider);
       const signer = await provider.getSigner();
-      const addr = accounts?.[0] ?? (await signer.getAddress());
-      setWalletAddress(ethers.getAddress(addr));
+      const finalAddr = ethers.getAddress(addr ?? (await signer.getAddress()));
+      setWalletAddress(finalAddr);
       
       try { localStorage.clear(); } catch {}
     } catch (err) {
