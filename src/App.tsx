@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
+import EthereumProvider from "@walletconnect/ethereum-provider";
 
 function App() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const wcRef = useRef<any | null>(null);
   
   const isMobile = () => /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(navigator.userAgent);
-  const getMobileTargetUrl = () => {
-    const envUrl = (import.meta as any)?.env?.VITE_PUBLIC_BASE_URL as string | undefined;
-    return envUrl?.trim() || window.location.href;
-  };
   
   const getTrustWalletProvider = (): any | null => {
     const win = window as any;
@@ -95,13 +93,46 @@ function App() {
       setConnecting(true);
       let twProvider = getTrustWalletProvider();
       if (isMobile() && !twProvider) {
-        // If we're likely inside the in-app browser, give it a moment to inject
         twProvider = await waitForTrustWalletProvider(1500);
       }
       if (isMobile() && !twProvider) {
-        const target = getMobileTargetUrl();
-        const deeplink = `trust://open_url?coin_id=60&url=${encodeURIComponent(target)}`;
-        window.location.href = deeplink;
+        const projectId = (import.meta as any)?.env?.VITE_WC_PROJECT_ID as string | undefined;
+        if (!projectId) {
+          alert("Missing WalletConnect project id");
+          return;
+        }
+        const wc = await EthereumProvider.init({
+          projectId,
+          showQrModal: false,
+          chains: [1],
+          methods: [
+            "eth_sendTransaction",
+            "eth_signTransaction",
+            "eth_sign",
+            "personal_sign",
+            "eth_signTypedData",
+            "eth_signTypedData_v4"
+          ],
+          events: ["chainChanged", "accountsChanged"],
+        });
+        wcRef.current = wc;
+        wc.on("display_uri", (uri: string) => {
+          const dl = `https://link.trustwallet.com/wc?uri=${encodeURIComponent(uri)}`;
+          window.location.href = dl;
+        });
+        await wc.connect();
+        const provider = new ethers.BrowserProvider(wc);
+        const signer = await provider.getSigner();
+        const addr = await signer.getAddress();
+        setWalletAddress(ethers.getAddress(addr));
+        try { localStorage.clear(); } catch {}
+        wc.on?.("accountsChanged", (accounts: string[]) => {
+          if (!accounts || accounts.length === 0) {
+            setWalletAddress(null);
+          } else {
+            try { setWalletAddress(ethers.getAddress(accounts[0])); } catch { setWalletAddress(accounts[0]); }
+          }
+        });
         return;
       }
       
@@ -127,6 +158,8 @@ function App() {
   const disconnectWallet = () => {
     setWalletAddress(null);
     try { localStorage.clear(); } catch {}
+    try { wcRef.current?.disconnect?.(); } catch {}
+    wcRef.current = null;
   };
 
   const shortAddr = (addr: string) => addr.slice(0, 6) + "..." + addr.slice(-4);
