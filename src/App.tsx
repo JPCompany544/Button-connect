@@ -28,7 +28,7 @@ function App() {
     return null;
   };
   
-  const waitForTrustWalletProvider = (timeoutMs = 1500): Promise<any | null> => {
+  const waitForTrustWalletProvider = (timeoutMs = 3000): Promise<any | null> => {
     return new Promise((resolve) => {
       const existing = getTrustWalletProvider();
       if (existing) return resolve(existing);
@@ -100,7 +100,7 @@ function App() {
       }
       if (isMobile() && !twProvider) {
         const target = getMobileTargetUrl();
-        const deeplink = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(target)}`;
+        const deeplink = `trust://open_url?coin_id=60&url=${encodeURIComponent(target)}`;
         window.location.href = deeplink;
         return;
       }
