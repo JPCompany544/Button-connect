@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "regenerator-runtime": "0.14.1",
     "@walletconnect/ethereum-provider": "2.21.8",
     "ethers": "6.15.0",
     "react": "19.1.1",

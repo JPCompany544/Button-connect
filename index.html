@@ -23,7 +23,12 @@
           } catch (_) {}
         }
         window.addEventListener('error', function (e) {
-          show('Error: ' + (e.message || (e.error && e.error.message) || e.error || 'unknown'));
+          var parts = [];
+          parts.push('Error: ' + (e.message || (e.error && e.error.message) || e.error || 'unknown'));
+          if (e.filename) parts.push('File: ' + e.filename);
+          if (typeof e.lineno === 'number') parts.push('Line: ' + e.lineno + ', Col: ' + e.colno);
+          try { if (e.error && e.error.stack) parts.push('Stack:\n' + e.error.stack); } catch(_){}
+          show(parts.join('\n'));
         });
         window.addEventListener('unhandledrejection', function (e) {
           var r = e.reason;
@@ -32,6 +37,6 @@
         });
       })();
     </script>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx" crossorigin="anonymous"></script>
   </body>
 </html>

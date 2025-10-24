@@ -9,8 +9,10 @@ export default defineConfig({
     legacy({
       targets: ['defaults', 'not IE 11'],
       modernPolyfills: true,
+      externalSystemJS: false,
+      additionalLegacyPolyfills: ['regenerator-runtime/runtime'],
     }),
   ],
-  build: { target: ['es2019', 'safari13'] },
+  build: { target: ['es2017', 'safari13'] },
   server: { host: true },
 })
