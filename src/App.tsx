@@ -10,7 +10,10 @@ function App() {
   const wcRef = useRef<any | null>(null);
   
   const isMobile = () => /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(navigator.userAgent);
-  
+  useEffect(() => {
+    console.log("VITE_WC_PROJECT_ID:", import.meta.env.VITE_WC_PROJECT_ID);
+    console.log("VITE_PUBLIC_BASE_URL:", import.meta.env.VITE_PUBLIC_BASE_URL);
+  }, []);
   const getTrustWalletProvider = (): any | null => {
     const win = window as any;
     const eth = win?.ethereum;
