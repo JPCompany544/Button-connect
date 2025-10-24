@@ -8,6 +8,30 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        function show(msg) {
+          try {
+            var el = document.getElementById('error-overlay');
+            if (!el) {
+              el = document.createElement('pre');
+              el.id = 'error-overlay';
+              el.style.cssText = 'position:fixed;left:0;right:0;top:0;max-height:50vh;overflow:auto;background:#111;color:#fff;padding:8px;margin:0;z-index:999999;font:12px/1.4 monospace;white-space:pre-wrap;opacity:.95';
+              document.body.appendChild(el);
+            }
+            el.textContent += (msg + '\n');
+          } catch (_) {}
+        }
+        window.addEventListener('error', function (e) {
+          show('Error: ' + (e.message || (e.error && e.error.message) || e.error || 'unknown'));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e.reason;
+          var m = (r && (r.stack || r.message)) || String(r);
+          show('UnhandledRejection: ' + m);
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

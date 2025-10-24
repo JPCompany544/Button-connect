@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
-import EthereumProvider from "@walletconnect/ethereum-provider";
 
 function App() {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -104,6 +103,7 @@ function App() {
           alert("Missing WalletConnect project id");
           return;
         }
+        const { default: EthereumProvider } = await import("@walletconnect/ethereum-provider");
         const wc = await EthereumProvider.init({
           projectId,
           showQrModal: false,
