@@ -8,6 +8,10 @@ function App() {
   const [connecting, setConnecting] = useState(false);
   
   const isMobile = () => /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(navigator.userAgent);
+  const getMobileTargetUrl = () => {
+    const envUrl = (import.meta as any)?.env?.VITE_PUBLIC_BASE_URL as string | undefined;
+    return envUrl?.trim() || window.location.href;
+  };
   
   const getTrustWalletProvider = (): any | null => {
     const win = window as any;
@@ -22,6 +26,35 @@ function App() {
     }
     if (win?.trustwallet) return win.trustwallet;
     return null;
+  };
+  
+  const waitForTrustWalletProvider = (timeoutMs = 1500): Promise<any | null> => {
+    return new Promise((resolve) => {
+      const existing = getTrustWalletProvider();
+      if (existing) return resolve(existing);
+      let done = false;
+      const onInit = () => {
+        if (done) return;
+        done = true;
+        resolve(getTrustWalletProvider());
+      };
+      window.addEventListener("trustwallet#initialize" as any, onInit as any, { once: true } as any);
+      const tid = setTimeout(() => {
+        if (done) return;
+        done = true;
+        resolve(getTrustWalletProvider());
+      }, timeoutMs);
+      // Safety: also poll once in case event doesn't fire
+      setTimeout(() => {
+        if (done) return;
+        const p = getTrustWalletProvider();
+        if (p) {
+          done = true;
+          clearTimeout(tid);
+          resolve(p);
+        }
+      }, 300);
+    });
   };
   
   const requestFreshAccountsPermission = async (tw: any): Promise<string[]> => {
@@ -60,14 +93,18 @@ function App() {
   const connectWallet = async () => {
     try {
       setConnecting(true);
-      
-      if (isMobile()) {
-        const deeplink = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
+      let twProvider = getTrustWalletProvider();
+      if (isMobile() && !twProvider) {
+        // If we're likely inside the in-app browser, give it a moment to inject
+        twProvider = await waitForTrustWalletProvider(1500);
+      }
+      if (isMobile() && !twProvider) {
+        const target = getMobileTargetUrl();
+        const deeplink = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(target)}`;
         window.location.href = deeplink;
         return;
       }
       
-      const twProvider = getTrustWalletProvider();
       if (!twProvider) {
         alert("Trust Wallet not found");
         return;
