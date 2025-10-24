@@ -9,6 +9,11 @@ function App() {
   const wcRef = useRef<any | null>(null);
   
   const isMobile = () => /Android|iPhone|iPad|iPod|IEMobile|Mobile/i.test(navigator.userAgent);
+  const isTrustInApp = () => {
+    const w = window as any;
+    if (w?.trustwallet) return true;
+    return /Trust\s?Wallet|TrustWallet/i.test(navigator.userAgent);
+  };
   useEffect(() => {
     console.log("VITE_WC_PROJECT_ID:", import.meta.env.VITE_WC_PROJECT_ID);
     console.log("VITE_PUBLIC_BASE_URL:", import.meta.env.VITE_PUBLIC_BASE_URL);
@@ -76,6 +81,27 @@ function App() {
       p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
     });
   };
+  
+  const promisifySendAsync = (eth: any, payload: any): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      try { eth.sendAsync(payload, (err: any, res: any) => err ? reject(err) : resolve(res?.result)); }
+      catch (e) { reject(e); }
+    });
+  };
+  
+  const requestAccountsCompat = async (eth: any): Promise<string[]> => {
+    let accounts: any = [];
+    if (eth && typeof eth === "object" && typeof eth.selectedAddress === "string" && eth.selectedAddress) return [eth.selectedAddress];
+    try { accounts = await withTimeout(eth.request({ method: "eth_requestAccounts" }), 12000); } catch {}
+    if (!accounts?.length) { try { accounts = await withTimeout(eth.request({ method: "eth_requestAccounts", params: [] }), 12000); } catch {} }
+    if (!accounts?.length && typeof eth.enable === "function") { try { const r = await withTimeout(eth.enable(), 12000); if (Array.isArray(r)) accounts = r; } catch {} }
+    if (!accounts?.length && typeof eth.sendAsync === "function") { try { const r = await withTimeout(promisifySendAsync(eth, { method: "eth_requestAccounts", params: [] }), 12000); if (Array.isArray(r)) accounts = r; } catch {} }
+    if (!accounts?.length && typeof eth.send === "function") { try { const r: any = await withTimeout(Promise.resolve(eth.send("eth_requestAccounts", [])), 12000); if (Array.isArray(r)) accounts = r; else if (Array.isArray(r?.result)) accounts = r.result; } catch {} }
+    if (!accounts?.length) { try { const provider = new ethers.BrowserProvider(eth); const r = await withTimeout(provider.send("eth_requestAccounts", []), 12000); if (Array.isArray(r)) accounts = r; } catch {} }
+    if (!accounts?.length && eth && typeof eth.selectedAddress === "string" && eth.selectedAddress) return [eth.selectedAddress];
+    if (!accounts?.length) { await new Promise(r => setTimeout(r, 1000)); if (eth && typeof eth.selectedAddress === "string" && eth.selectedAddress) return [eth.selectedAddress]; }
+    return accounts as string[];
+  };
 
   useEffect(() => {
     const onAccountsChanged = (accounts: string[]) => {
@@ -107,9 +133,10 @@ function App() {
       setConnecting(true);
       let twProvider = getTrustWalletProvider();
       if (isMobile() && !twProvider) {
-        twProvider = await waitForTrustWalletProvider();
+        twProvider = await waitForTrustWalletProvider(6000);
       }
-      if (isMobile() && !twProvider) {
+      const inApp = isMobile() && isTrustInApp();
+      if (isMobile() && !inApp && !twProvider) {
         const projectId = (import.meta as any)?.env?.VITE_WC_PROJECT_ID as string | undefined;
         if (!projectId) {
           alert("Missing WalletConnect project id");
@@ -152,25 +179,14 @@ function App() {
       }
       
       if (!twProvider) {
-        alert("Trust Wallet not found");
-        return;
+        if (inApp && (window as any).ethereum) twProvider = (window as any).ethereum;
+        if (!twProvider) { alert("Trust Wallet not found"); return; }
       }
       
       let addr: string | undefined;
       if (isMobile()) {
-        let accounts: string[] = [];
-        try { await withTimeout(twProvider.request({ method: "eth_chainId" }), 3000); } catch {}
-        try {
-          const existing = await withTimeout(twProvider.request({ method: "eth_accounts" }), 2000);
-          if (Array.isArray(existing)) accounts = existing;
-        } catch {}
-        if (!accounts.length) {
-          try { accounts = await withTimeout(twProvider.request({ method: "eth_requestAccounts" }), 15000) as string[]; } catch {}
-        }
-        if (!accounts.length && typeof twProvider.enable === "function") {
-          try { const en = await withTimeout(twProvider.enable(), 15000) as string[]; if (Array.isArray(en)) accounts = en; } catch {}
-        }
-        if (!accounts.length) throw new Error("No accounts");
+        const accounts = await requestAccountsCompat(twProvider);
+        if (!accounts?.length) throw new Error("No accounts");
         addr = accounts[0];
       } else {
         // Desktop extension: keep best-effort re-prompt behavior
